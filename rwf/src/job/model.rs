@@ -152,21 +152,21 @@ pub trait Job: Sync + Send {
     ///
     /// This method schedules the job in the queue and returns immediately without
     /// running the job.
-    async fn execute_async(&self, args: serde_json::Value) -> Result<(), Error> {
+    async fn execute_async(&self, args: serde_json::Value) -> Result<i64, Error> {
         let mut conn = get_connection().await?;
-        JobModel::new(self.job_name(), args)
+        let job = JobModel::new(self.job_name(), args)
             .save()
             .execute(&mut conn)
             .await?;
 
         info!("job {} scheduled to run now", self.job_name().green());
 
-        Ok(())
+        job.first().and_then(|job| job.id).ok_or(Error::JobError)
     }
 
-    async fn execute_delay(&self, args: serde_json::Value, delay: Duration) -> Result<(), Error> {
+    async fn execute_delay(&self, args: serde_json::Value, delay: Duration) -> Result<i64, Error> {
         let mut conn = get_connection().await?;
-        JobModel::new_with_delay(self.job_name(), args, delay)
+        let job = JobModel::new_with_delay(self.job_name(), args, delay)
             .save()
             .execute(&mut conn)
             .await?;
@@ -177,7 +177,7 @@ pub trait Job: Sync + Send {
             delay.whole_seconds()
         );
 
-        Ok(())
+        job.first().and_then(|job| job.id).ok_or(Error::JobError)
     }
 
     fn schedule(self, args: serde_json::Value, schedule: &str) -> Result<ScheduledJob, Error>
@@ -220,18 +220,18 @@ impl JobHandler {
 }
 
 #[inline]
-pub async fn queue<T: Job + Serialize>(job: &T) -> Result<(), Error> {
+pub async fn queue<T: Job + Serialize>(job: &T) -> Result<i64, Error> {
     let args = serde_json::to_value(job)?;
     job.execute_async(args).await
 }
 
 #[inline]
-pub async fn queue_delay<T: Job + Serialize>(job: &T, delay: Duration) -> Result<(), Error> {
+pub async fn queue_delay<T: Job + Serialize>(job: &T, delay: Duration) -> Result<i64, Error> {
     let args = serde_json::to_value(job)?;
     job.execute_delay(args, delay).await
 }
 
 #[inline]
-pub async fn queue_async<T: Job + Serialize>(job: &T) -> Result<(), Error> {
+pub async fn queue_async<T: Job + Serialize>(job: &T) -> Result<i64, Error> {
     queue(job).await
 }
